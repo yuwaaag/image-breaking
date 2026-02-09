@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live News Channel</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@700&display=swap');
+        
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Noto Sans Devanagari', sans-serif; }
+        
+        /* 1. इमेज एरिया */
+        #tv-screen {
+            width: 100vw; height: 85vh;
+            background: #000; display: flex; justify-content: center; align-items: center;
+        }
+        #news-img {
+            max-width: 100%; max-height: 100%;
+            border: 2px solid #333;
+            box-shadow: 0 0 50px rgba(255,0,0,0.2);
+        }
+
+        /* 2. ब्रेकिंग न्यूज़ पट्टी (नीचे) */
+        .ticker-wrap {
+            position: fixed; bottom: 0; width: 100%; height: 15vh;
+            background: linear-gradient(90deg, #cc0000 0%, #990000 100%);
+            display: flex; align-items: center; padding-left: 20px;
+            color: white; border-top: 5px solid #ffcc00;
+            box-shadow: 0 -10px 20px rgba(0,0,0,0.5);
+        }
+
+        .label {
+            background: #ffcc00; color: #cc0000;
+            padding: 5px 15px; font-size: 2vw; font-weight: 900;
+            border-radius: 5px; margin-right: 20px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            animation: blink 1s infinite;
+        }
+
+        #headline {
+            font-size: 3vw; font-weight: 700;
+            text-shadow: 2px 2px 4px #000;
+            width: 80%;
+        }
+
+        /* 3. स्टार्ट बटन */
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+            color: white; font-size: 30px; cursor: pointer;
+        }
+        
+        @keyframes blink { 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+    <div id="overlay" onclick="startChannel()">
+        CLICK TO START NEWS
+    </div>
+
+    <div id="tv-screen">
+        <img id="news-img" src="https://via.placeholder.com/1280x720/000000/FFFFFF/?text=Loading..." alt="News">
+    </div>
+
+    <div class="ticker-wrap">
+        <div class="label">BREAKING</div>
+        <div id="headline">कनेक्टिंग...</div>
+    </div>
+
+    <script>
+        // 👇 अपनी शीट का CSV लिंक यहाँ पेस्ट करें (Step 1 वाला)
+        const CSV_LINK = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQZYo2L58_aXsBjXeYAsrmbnWGiz7JBOQKiordJEwS6H6dNaNUDGjLUkjBTQuiws55WJvYcAZ5LdxAx/pub?gid=0&single=true&output=csv'; 
+
+        let newsData = [];
+        let index = 0;
+
+        // 1. शीट से डेटा खींचना
+        async function loadNews() {
+            try {
+                // cache-busting के लिए time parameter जोड़ा गया
+                const res = await fetch(CSV_LINK + '&t=' + Date.now());
+                const text = await res.text();
+                const rows = text.split('\n').slice(1); // हेडर हटाएं
+                
+                newsData = rows.map(r => {
+                    // CSV को सही से तोड़ने का लॉजिक
+                    const c = r.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                    return { 
+                        text: c[0] ? c[0].replace(/"/g, '').trim() : "News",
+                        img: c[1] ? c[1].replace(/"/g, '').trim() : ""
+                    };
+                }).filter(n => n.text.length > 2); // खाली लाइन हटाएं
+                
+                return true;
+            } catch (e) { console.log("Error:", e); return false; }
+        }
+
+        // 2. एंकर की आवाज़ (Clean Voice)
+        function speak(txt) {
+            return new Promise(resolve => {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(txt);
+                u.lang = 'hi-IN'; 
+                u.rate = 0.9;
+                
+                // हिंदी आवाज़ ढूँढना
+                const voices = window.speechSynthesis.getVoices();
+                const hiVoice = voices.find(v => v.lang.includes('hi')) || voices[0];
+                u.voice = hiVoice;
+
+                u.onend = resolve;
+                window.speechSynthesis.speak(u);
+            });
+        }
+
+        // 3. इमेज बदलना
+        function showImage(url) {
+            const img = document.getElementById('news-img');
+            if(url && url.startsWith('http')) {
+                img.src = url;
+            } else {
+                // अगर फोटो नहीं है तो ब्लैक स्क्रीन
+                img.src = "https://via.placeholder.com/1280x720/000000/FFFFFF/?text=PTN+NEWS"; 
+            }
+        }
+
+        // 4. न्यूज़ लूप (Main Loop)
+        async function runLoop() {
+            if(newsData.length === 0) await loadNews();
+            
+            if(index >= newsData.length) {
+                index = 0;
+                await loadNews(); // लूप खत्म होने पर ताज़ा खबरें चेक करें
+            }
+
+            const item = newsData[index];
+            
+            // स्क्रीन पर दिखाएं
+            document.getElementById('headline').innerText = item.text;
+            showImage(item.img);
+
+            // बोलें
+            await speak(item.text);
+
+            // अगली खबर से पहले 2 सेकंड रुकें
+            await new Promise(r => setTimeout(r, 2000));
+
+            index++;
+            runLoop();
+        }
+
+        function startChannel() {
+            document.getElementById('overlay').style.display = 'none';
+            // Chrome को आवाज़ लोड करने का समय दें
+            window.speechSynthesis.getVoices();
+            runLoop();
+        }
+        
+        // आवाज़ लोड होने का इंतज़ार
+        window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+    </script>
+</body>
+</html>
